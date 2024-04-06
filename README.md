@@ -1,1 +1,2 @@
-Example of creating a debounced stream from a tokio broadcast channel
+Example of creating a debounced stream, with an implementation 
+that drops all but the last value seen.
