@@ -20,22 +20,22 @@ pin_project! {
         #[pin]
         value: St,
         #[pin]
-        now: Instant,
-        #[pin]
         delay: Sleep,
         #[pin]
         debounce_time: Duration,
         #[pin]
-        last_state: Option<St::Item>
+        last_state: Option<St::Item>,
+        #[pin]
+        child_ended: bool
     }
 }
 
 pub trait StreamOpsExt: Stream {
-    fn debounce(self, debounce_time: Duration, now: Instant) -> Debounce<Self>
+    fn debounce(self, debounce_time: Duration) -> Debounce<Self>
     where
         Self: Sized + Unpin,
     {
-        Debounce::new(self, debounce_time, now)
+        Debounce::new(self, debounce_time)
     }
 }
 
@@ -46,13 +46,13 @@ where
     St: Stream + Unpin,
 {
     #[allow(dead_code)]
-    fn new(stream: St, debounce_time: Duration, now: Instant) -> Debounce<St> {
+    fn new(stream: St, debounce_time: Duration) -> Debounce<St> {
         Debounce {
             value: stream,
             delay: tokio::time::sleep(debounce_time),
             debounce_time,
             last_state: None,
-            now
+            child_ended: false
         }
     }
 }
@@ -82,6 +82,7 @@ where
             }
             Poll::Ready(None) => {
                 trace!("child ended, nothing more to do?");
+                *me.child_ended = true;
             }
             Poll::Pending => {
                 trace!("child was pending, nothing to do");
@@ -94,10 +95,15 @@ where
                 match (*me.last_state).clone() {
                     Some(v) => {
                         *me.last_state = None;
+                        trace!("sending value");
                         Poll::Ready(Some(v))
                     },
                     None => {
-                        Poll::Ready(None)
+                        if *me.child_ended {
+                            Poll::Ready(None)
+                        } else {
+                            Poll::Pending
+                        }
                     }
                 }
             }
@@ -144,7 +150,7 @@ async fn main() {
     let start_time = Instant::now();
     let mut stream = Box::pin(
         ReceiverStream::new(rx)
-            .debounce(Duration::from_millis(1000), Instant::now())
+            .debounce(Duration::from_millis(1000))
             .collect::<Vec<_>>()
     );
 
