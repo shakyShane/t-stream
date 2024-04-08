@@ -5,11 +5,11 @@ use std::time::Duration;
 
 use futures::{Future, Stream};
 use pin_project_lite::pin_project;
-use tokio::sync::{mpsc};
-use tokio::time::{Instant, Sleep};
+use tokio::sync::mpsc;
 use tokio::time::sleep;
-use tokio_stream::{StreamExt};
+use tokio::time::{Instant, Sleep};
 use tokio_stream::wrappers::ReceiverStream;
+use tokio_stream::StreamExt;
 use tracing::{info, trace};
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
@@ -52,7 +52,7 @@ where
             delay: tokio::time::sleep(debounce_time),
             debounce_time,
             last_state: None,
-            child_ended: false
+            child_ended: false,
         }
     }
 }
@@ -73,8 +73,9 @@ where
                 *me.last_state = Some(v);
 
                 trace!("resetting the deadline to be `debounce_time` from `now`");
-                let dur = me.debounce_time.clone();
-                me.delay.as_mut().reset(Instant::now() + dur);
+                me.delay
+                    .as_mut()
+                    .reset(Instant::now() + (*me.debounce_time));
 
                 trace!("wake to ensure we're polled again");
                 cx.waker().wake_by_ref();
@@ -97,7 +98,7 @@ where
                         *me.last_state = None;
                         trace!("sending value");
                         Poll::Ready(Some(v))
-                    },
+                    }
                     None => {
                         if *me.child_ended {
                             Poll::Ready(None)
@@ -107,16 +108,13 @@ where
                     }
                 }
             }
-            Poll::Pending => {
-                Poll::Pending
-            }
+            Poll::Pending => Poll::Pending,
         }
     }
 }
 
 #[tokio::main]
 async fn main() {
-
     let fmt_layer = tracing_subscriber::fmt::layer();
     tracing_subscriber::registry()
         .with(
@@ -148,15 +146,17 @@ async fn main() {
     });
 
     let start_time = Instant::now();
-    let mut stream = Box::pin(
+    let stream = Box::pin(
         ReceiverStream::new(rx)
             .debounce(Duration::from_millis(1000))
-            .collect::<Vec<_>>()
+            .collect::<Vec<_>>(),
     );
 
     let results = stream.await;
     let end_time = Instant::now();
-    let total_duration = end_time.checked_duration_since(start_time).expect("checked");
+    let total_duration = end_time
+        .checked_duration_since(start_time)
+        .expect("checked");
 
     info!(?results);
     info!(?total_duration, "overall duration");
