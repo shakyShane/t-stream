@@ -1,1 +1,1 @@
-workspace = { members = ["debounce-stream"], resolver = "2" }
+workspace = { members = ["debounce-stream", "https-proxy"], resolver = "2" }
