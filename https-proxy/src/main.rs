@@ -1,11 +1,12 @@
-use axum::handler::HandlerWithoutStateExt;
+use axum::extract::State;
 use axum::http::{HeaderValue, Uri};
+use axum::routing::any;
 use axum::{
     body::Body,
     extract::Request,
     http::StatusCode,
     response::{IntoResponse, Response},
-    Extension, Router,
+    Router,
 };
 
 use hyper_tls::HttpsConnector;
@@ -19,9 +20,7 @@ async fn main() {
     let client: Client<HttpsConnector<HttpConnector>, Body> =
         Client::builder(TokioExecutor::new()).build(https);
 
-    let app = Router::new()
-        .nest_service("/", handler.into_service())
-        .layer(Extension(client));
+    let app = Router::new().nest_service("/", any(handler).with_state(client));
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:4000")
         .await
@@ -30,13 +29,10 @@ async fn main() {
     axum::serve(listener, app).await.unwrap();
 }
 
-async fn handler(req: Request) -> Result<Response, StatusCode> {
-    let client = {
-        req.extensions()
-            .get::<Client<HttpsConnector<HttpConnector>, Body>>()
-            .expect("must have a client, move this to an extractor?")
-    };
-    let client_c = client.clone();
+async fn handler(
+    State(client): State<Client<HttpsConnector<HttpConnector>, Body>>,
+    req: Request,
+) -> Result<Response, StatusCode> {
     let path = req.uri().path();
     let path_query = req
         .uri()
@@ -56,7 +52,7 @@ async fn handler(req: Request) -> Result<Response, StatusCode> {
     let host_header_value = HeaderValue::from_str(target).unwrap();
     req.headers_mut().insert("host", host_header_value);
 
-    Ok(client_c
+    Ok(client
         .request(req)
         .await
         .map_err(|_| StatusCode::BAD_REQUEST)?
